@@ -103,6 +103,12 @@ Publiczne funkcje mają te same nazwy i parametry; zmiany:
 - **`collectMessagesUntil`** — czyta topic do momentu pojawienia się wiadomości-znacznika
   (sentinel). Pozwala sprawdzić, że wiadomość *nie* trafiła na `orders-processed`,
   bez czekania pełnego timeoutu (opis w komentarzu funkcji).
+- **Domyślny timeout odczytu 10 s zamiast 20 s** — przetwarzanie trwa milisekundy, a dwa odczyty
+  w jednym teście (wynik + sentinel) mieszczą się w limicie Jesta (30 s). Gdy coś nie działa,
+  test kończy się czytelną asercją, a nie ogólnym „Exceeded timeout”.
+- **Uczciwy typ matcherów po `orderId`** (`WithOrderId`): sprawdzają tylko `orderId`, więc nie
+  deklarują pełnego typu `Order`. To celowe — wiadomość z błędnymi danymi ma zostać znaleziona,
+  żeby `toEqual` pokazało różnicę. Pełny kształt sprawdza `isOrder`.
 - **`logLevel: WARN`** — domyślne logi INFO kafkajs zasłaniały wynik testów.
 
 #### Poprawka w konsumencie: JSON, który nie jest obiektem
@@ -131,6 +137,10 @@ wartość jest obiektem (nie `null` i nie tablicą). Jeśli nie, wiadomość tra
 
 **Dlaczego poprawiam, a nie tylko opisuję:** bez poprawki test tego przypadku
 zatrzymałby konsumenta i zepsuł wszystkie kolejne testy (brak izolacji).
+
+**Weryfikacja:** testy „wysyła do DLQ poprawny JSON, który nie jest obiektem” uruchomione na
+konsumencie sprzed poprawki kończą się porażką (wszystkie 5: `Received: null` — wpis na DLQ
+się nie pojawia), a na poprawionym przechodzą.
 
 Po zmianie konsumenta trzeba przebudować jego obraz: `docker compose up --build -d consumer`.
 

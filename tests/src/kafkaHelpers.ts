@@ -36,7 +36,11 @@ export const ORDERS_TOPIC = "orders";
 export const ORDERS_PROCESSED_TOPIC = "orders-processed";
 export const ORDERS_DLQ_TOPIC = "orders-dlq";
 
-const DEFAULT_POLL_TIMEOUT_SECONDS = 20;
+// 10 s z dużym zapasem wystarcza (przetwarzanie trwa milisekundy), a dwa odczyty
+// w jednym teście (wynik + sentinel) z rozłączaniem mieszczą się w limicie Jesta
+// (testTimeout 30 s). Dzięki temu porażka kończy się czytelną asercją,
+// a nie ogólnym „Exceeded timeout”.
+const DEFAULT_POLL_TIMEOUT_SECONDS = 10;
 
 const kafka = new Kafka({
   clientId: "kafka-qa-tests",
@@ -67,6 +71,15 @@ export interface DlqParseError {
   error: string;
   raw: string;
 }
+
+/**
+ * Wiadomość, o której wiemy tylko tyle, że ma dany orderId — pozostałe pola
+ * są nieznanego typu. Matchery po orderId celowo NIE sprawdzają pełnego kształtu
+ * zamówienia: wiadomość z błędnymi danymi ma zostać znaleziona, żeby asercja
+ * `toEqual` pokazała różnicę, zamiast skończyć się niejasnym `null`.
+ * Pełny kształt sprawdza `isOrder`.
+ */
+export type WithOrderId = Record<string, unknown> & { orderId: string };
 
 /** Metadane rekordu Kafki przekazywane do funkcji dopasowującej. */
 export interface RecordMeta {
@@ -118,13 +131,13 @@ export function isDlqParseError(value: unknown): value is DlqParseError {
 }
 
 /** Dopasowuje zamówienie o danym orderId (np. na 'orders-processed'). */
-export function byOrderId(orderId: string): MatchFn<Order> {
-  return (value): value is Order => isObject(value) && value.orderId === orderId;
+export function byOrderId(orderId: string): MatchFn<WithOrderId> {
+  return (value): value is WithOrderId => isObject(value) && value.orderId === orderId;
 }
 
 /** Dopasowuje zamówienia, których orderId należy do podanego zbioru. */
-export function byOrderIds(orderIds: ReadonlySet<string>): MatchFn<Order> {
-  return (value): value is Order =>
+export function byOrderIds(orderIds: ReadonlySet<string>): MatchFn<WithOrderId> {
+  return (value): value is WithOrderId =>
     isObject(value) && typeof value.orderId === "string" && orderIds.has(value.orderId);
 }
 
