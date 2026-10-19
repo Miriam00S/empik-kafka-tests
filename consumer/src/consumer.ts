@@ -79,9 +79,9 @@ async function main(): Promise<void> {
         return;
       }
 
-      let order: Record<string, unknown>;
+      let parsed: unknown;
       try {
-        order = JSON.parse(rawValue.toString("utf-8"));
+        parsed = JSON.parse(rawValue.toString("utf-8"));
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         log(`Niepoprawny JSON, wysyłam do DLQ. Błąd: ${errorMessage}`);
@@ -99,6 +99,27 @@ async function main(): Promise<void> {
         });
         return;
       }
+
+      // Poprawny JSON nie musi być obiektem (np. `null`, `42`, `"abc"`, `[]`).
+      // Bez tego sprawdzenia operator `in` w validate() rzuca TypeError,
+      // co wywraca klienta kafkajs i zatrzymuje przetwarzanie wszystkich partycji.
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        log(`Wiadomość nie jest obiektem JSON, wysyłam do DLQ: ${rawValue.toString("utf-8")}`);
+        await producer.send({
+          topic: DLQ_TOPIC,
+          messages: [
+            {
+              key,
+              value: JSON.stringify({
+                error: "Wiadomość musi być obiektem JSON.",
+                raw: rawValue.toString("utf-8"),
+              }),
+            },
+          ],
+        });
+        return;
+      }
+      const order = parsed as Record<string, unknown>;
 
       const errors = validate(order);
       if (errors.length > 0) {
